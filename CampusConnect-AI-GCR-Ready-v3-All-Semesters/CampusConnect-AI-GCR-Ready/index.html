@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CampusConnect AI</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="shell">
+<aside class="sidebar">
+  <div class="brand"><div class="mark">🎓</div><div><b>CampusConnect</b><span>AI Tutor</span></div></div>
+  <button class="new-chat" id="newChat">＋ New conversation</button>
+  <div class="quick"><small>QUICK ACCESS</small>
+    <button data-q="Make me a study plan for this week.">📅 <span>Study Plan</span></button>
+    <button data-q="How should I prepare for my exams?">📝 <span>Exam Preparation</span></button>
+    <button data-q="Explain Data Science in simple words.">🧠 <span>Learn a Concept</span></button>
+    <button data-q="Give me some academic project ideas.">💡 <span>Project Ideas</span></button>
+  </div>
+  <div class="online"><i></i> AI Tutor online</div>
+</aside>
+<main>
+<header><div class="mobile-brand">🎓 <b>CampusConnect</b></div><div class="tools"><button id="theme">☾</button><button id="clear">⌫</button></div></header>
+<section class="messages" id="messages">
+<div class="welcome" id="welcome">
+  <div class="hero">✦</div>
+  <h1>How can I help you today?</h1>
+  <p>Your CampusConnect AI Tutor for learning, exams, projects and academic guidance.</p>
+  <div class="suggestions">
+    <button data-q="Explain Data Science in simple words."><span>🧠</span><b>Explain a concept</b><em>Learn something clearly</em></button>
+    <button data-q="Make me a 7-day study plan."><span>📅</span><b>Make a study plan</b><em>Organize your week</em></button>
+    <button data-q="Give me some academic project ideas."><span>🚀</span><b>Project ideas</b><em>Find something to build</em></button>
+    <button data-q="How can I prepare for an exam effectively?"><span>🎯</span><b>Exam tips</b><em>Prepare smarter</em></button>
+  </div>
+</div>
+</section>
+<form class="composer" id="form"><div class="input-box"><textarea id="input" rows="1" placeholder="Ask CampusConnect anything..."></textarea><button type="submit">➤</button></div><small>CampusConnect AI • Enter to send</small></form>
+</main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

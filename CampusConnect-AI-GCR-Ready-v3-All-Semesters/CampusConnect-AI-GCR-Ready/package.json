@@ -1,0 +1,7 @@
+{
+  "name": "campusconnect-ai-gcr-ready",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {"dev": "vercel dev"},
+  "dependencies": {"@google/genai": "^1.41.0"}
+}
