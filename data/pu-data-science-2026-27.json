@@ -1,146 +1,814 @@
-const { GoogleGenAI } = require("@google/genai");
-const academicData = require("../data/pu-data-science-2026-27.json");
-
-const MODEL = "gemini-3.5-flash";
-const NOT_AVAILABLE = "Not available in the provided document.";
-
-function normalize(value) {
-  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function semesterFromQuery(q) {
-  const match = q.match(/(?:semester|sem)\s*(1|2|3|4)\b/);
-  return match ? Number(match[1]) : null;
-}
-
-function buildAcademicContext(question) {
-  const q = normalize(question);
-  const sem = semesterFromQuery(q);
-  const allSubjects = [
-    ...academicData.subjects,
-    ...academicData.projectSubjects,
-    ...academicData.semester4Components
-  ];
-
-  const matched = allSubjects.filter((s) => {
-    const haystack = normalize([
-      s.code, s.name, s.category,
-      ...(s.units || []).flatMap((u) => u),
-      ...(s.books || []).flatMap((b) => b),
-      s.objectives, s.outcomes
-    ].join(" "));
-    const codeMatch = q.includes(normalize(s.code));
-    const nameWords = normalize(s.name).split(" ").filter((w) => w.length > 3);
-    const nameMatch = nameWords.some((w) => q.includes(w));
-    const keywordMatch = ["unit", "topic", "syllabus", "book", "objective", "outcome", "marks", "credit", "exam", "paper"]
-      .some((w) => q.includes(w)) && nameWords.some((w) => haystack.includes(w) && q.includes(w));
-    return codeMatch || nameMatch || keywordMatch || (sem && s.semester === sem);
-  });
-
-  const selected = matched.length ? matched : [];
-  const wantsAllSubjects = /\b(all|list|subjects|papers|courses|curriculum|course structure)\b/.test(q);
-
-  let context = {
-    source: academicData.source,
-    programme: academicData.programme,
-    semesters: academicData.semesters,
-  };
-
-  if (wantsAllSubjects || sem) {
-    context.subjects = allSubjects
-      .filter((s) => !sem || s.semester === sem)
-      .map(s => ({
-        semester: s.semester,
-        code: s.code,
-        name: s.name,
-        category: s.category,
-        lectures: s.lectures,
-        universityExamMarks: s.exam,
-        internalAssessmentMarks: s.internal,
-        totalMarks: s.total,
-        credits: s.credits
-      }));
-  }
-
-  if (selected.length) {
-    context.selectedSubjects = selected.slice(0, 3);
-  }
-
-  if (/\b(project|major project|seminar|training|viva|report)\b/.test(q)) {
-    context.projectSubjects = academicData.projectSubjects;
-    context.majorProjectRequirements = academicData.majorProjectRequirements;
-  }
-
-  return JSON.stringify(context, null, 2);
-}
-
-module.exports = async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  try {
-    const { message, history = [] } = req.body || {};
-    if (!message || !String(message).trim()) {
-      return res.status(400).json({ error: "Please enter a message." });
-    }
-
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({
-        error: "The AI service is not configured. Add GEMINI_API_KEY in the deployment's environment variables."
-      });
-    }
-
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const question = String(message).slice(0, 6000);
-    const academicContext = buildAcademicContext(question);
-
-    const safeHistory = Array.isArray(history)
-      ? history
-          .filter(x => x && (x.role === "user" || x.role === "model") && typeof x.text === "string")
-          .slice(-10)
-          .map(x => ({ role: x.role, parts: [{ text: x.text.slice(0, 6000) }] }))
-      : [];
-
-    const systemInstruction = `You are CampusConnect AI, the academic assistant inside the CampusConnect student platform.
-
-PRIMARY SOURCE OF TRUTH
-The supplied ACADEMIC CONTEXT comes from the official Panjab University syllabus for:
-M.Sc. (Hons.) (Two-Year programme) in Computer Science, Specialization in Data Science,
-Honours School System, Examinations 2026-2027.
-
-RULES
-1. For university/programme-specific questions, use the supplied ACADEMIC CONTEXT as the source of truth.
-2. Never invent or guess PU-specific subjects, syllabus units, marks, credits, books, exam rules, project rules, dates, notices or policies.
-3. If the requested exact PU information is not present in the supplied context, say exactly: "Not available in the provided document." Then briefly explain what information is available if useful.
-4. You may explain general academic concepts using your own knowledge, but clearly distinguish general explanations from official PU information.
-5. When listing subjects, preserve their official paper codes and names.
-6. Be concise, student-friendly, and practical. Use tables or bullets when helpful.
-7. If asked about a semester, give the relevant semester's complete subject list and credits/marks when present.
-8. If asked about a subject, use its objectives, outcomes, units and books when supplied.
-9. Do not claim that information comes from a document unless it is present in ACADEMIC CONTEXT.
-
-ACADEMIC CONTEXT
-${academicContext}`;
-
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents: [
-        ...safeHistory,
-        { role: "user", parts: [{ text: question }] }
+{
+  "subjects": [
+    {
+      "semester": 1,
+      "code": "MDS-2601",
+      "name": "Principles of Data Science",
+      "category": "DSC",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "The main objectives of this course are to:\n• provide a strong foundation for data science and its application area.\n• understand the underlying core concepts and emerging technologies in data science.\n• develop applied experience with data science software, programming, applications and processes.\n• develop practical skills needed in modern analytics.\n• give a hands-on experience with real-world data analysis.",
+      "outcomes": "After successful completion of the course, student will be able to:\n• Understand the impact of digital data in businesses its role in making crucial decisions.\n• Have preliminary knowledge on data science process, tools, and job trends.\n• Have proficiency in utilizing diverse feature selection, anomaly detection methods and time series forecasting techniques.\n• Have knowledge about available data science tools.",
+      "units": [
+        [
+          "UNIT I",
+          "Data Science: History, Principles and Impact; Data: Types, Modelling, Exploring, Collecting, Visualizing, Predicting, and Deploying the Model; Data Science Process, Lifecycle; Components of Data Science: Data Analysis process and types."
+        ],
+        [
+          "UNIT II",
+          "Data Science Integrating Statistics, Computer Science, and Domain Expertise: Statistics and Mathematical Functions; Data Science tools: Database, Data Analytics, Web Scraping, Machine Learning, Reporting. Data Science as a profession: Skill set and Job Trends."
+        ],
+        [
+          "UNIT III",
+          "Feature selection and Forecasting: Introduction, Feature Selection: Classifying feature selection methods; Anomaly Detection: Introduction, Distance and Density based outlier detection, Local Outlier Factor, Time series Forecasting, Decomposition, Smoothing based methods, Regression based methods, Machine Learning methods."
+        ],
+        [
+          "UNIT IV",
+          "Data science tools and applications: Introduction to Data Science Tools: SAS, APACHE FLINK, BigML, Excel, Tableau, Matplotlib, TensorFlow, Weka. Applications: Solving Data Problems: Collecting and Analyzing Social media Data."
+        ]
       ],
-      config: {
-        systemInstruction
-      }
-    });
-
-    return res.status(200).json({
-      reply: response.text || "I couldn't generate a response. Please try again."
-    });
-  } catch (error) {
-    console.error("CampusConnect AI error:", error);
-    return res.status(500).json({
-      error: "The AI service could not respond right now. Please try again."
-    });
-  }
-};
+      "books": [
+        [
+          "Joel Grus",
+          "Data Science from Scratch – First Principles with Python, O’Reilly Media, SPD), 2017."
+        ],
+        [
+          "Foster Provost and Tom Fawcett",
+          "Data Science for Business – What you need to know about Data Mining and Data-Analytic Thinking, O’Reilly Media, SPD, 2019."
+        ],
+        [
+          "Peter Flach",
+          "Machine Learning - The Art and Science of Algorithms that Make Sense of Data, Cambridge University Press, 2015."
+        ],
+        [
+          "Davie Cielen, Arno D.B. Meysman, and Mohamed Ali",
+          "Introducing Data Science – Big Data, Machine Learning and More, Using Python Tools, Dreamtech Press, 2016."
+        ],
+        [
+          "Sanjeev J. Wagh, Manisha S. Bhende, Anuradha D. Thakare",
+          "Fundamentals of Data Science, 1st Edition, 2022."
+        ],
+        [
+          "Daimi, Kevin, Ed. Hamid R. Arabnia",
+          "Principles of Data Science, Springer, 2020."
+        ],
+        [
+          "Vijay Kotu, Bala Deshpande",
+          "Data Science: Concepts and Practices, Morgan Kaufmann Publishers, Second edition, 2019."
+        ],
+        [
+          "D J Patil, Hilary Mason, Mike Loukides",
+          "Ethics and Data Science, O’ Reilly, 1st edition, 2018."
+        ],
+        [
+          "Sinan Ozdemir",
+          "Principles of Data Science, Packt Publishing, 2016."
+        ]
+      ]
+    },
+    {
+      "semester": 1,
+      "code": "MDS-2602",
+      "name": "Programming in Python",
+      "category": "DSC",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "The main objectives of this course are to:\n• To provide an overview of Python Programming\n• To identify and explain basic Python syntax, including variables, data types, and operators.\n• To teach the fundamental techniques and principles in decision making and iteration using Python.\n• To develop algorithmic thinking skills to solve problems using Python.\n• Apply Python programming concepts to devise solutions for real-world problems.",
+      "outcomes": "After successful completion of the course, student will be able to:\n• Demonstrate Python Programming syntax, including variables, data types, and operators, enabling them to write clear and concise Python code.\n• Develop strong problem-solving skills by applying control flow structures and functions to design solutions for a variety of computational problems.\n• Use fundamental data structures in Python, such as lists, tuples, dictionaries, and sets, and will be able to manipulate and analyze data effectively.\n• Acquire a solid foundation in object-oriented programming (OOP), understanding how to create and use classes, objects, inheritance, and polymorphism in Python for building modular and scalable programs.",
+      "units": [
+        [
+          "UNIT I",
+          "Introduction to Object Oriented Programming (OOPs), OOPs Concepts-Class, Object, Encapsulation, Abstraction, Polymorphism, Message Passing, Static and Dynamic Binding. Introduction to Python, History of Python, Python Interpreter, Installation of Python in Windows and Linux, Python IDE, Introduction to Anaconda, Basic Program Execution in Python, Python Shell."
+        ],
+        [
+          "UNIT II",
+          "Python Programming Basics- Variable Declaration, Keywords, Indents and basic Input-output operations in Python. Operators in Python : Arithmetic Operators, Assignment Operators, Comparison Operators, Logical Operators, Bitwise Operators, Identity Operators, Membership Operators, Ternary Operator, Operator precedence. Data Types in Python : Built-in, String, List, Tuple, Set, Dictionary, Basic list operators, list slicing, replacing, inserting, removing an element, Searching, Sorting; Dictionary literals: adding & removing keys, accessing & replacing values, traversing dictionaries; String Manipulations: Subscript operator, indexing, slicing a string, other functions on strings, string module. Strings and number system: Format functions, converting strings to numbers and vice versa."
+        ],
+        [
+          "UNIT III",
+          "Conditional Statements and Loop Conditional Statements in Python: If, If-else, If-elif-else, Nested-if and for, while, Nested loops, Break, Continue, Pass statements. Introduction to functions in Python, Function definition and calling, Function parameters, Default argument function, Variable argument function, built-in functions in Python, Scope of variable. Recursive functions, Global statements, Importing modules, Math modules and Random modules."
+        ],
+        [
+          "UNIT IV",
+          "File Handling in Python: Introduction to Data, Records, Fields, Files, Attributes of a File, File opening modes, closing of a file, Reading from a file, Writing onto a file, some important File handling functions open(), close(), read(), readline(). Arrays in Python, Concept of modularization, Importance of modules in Python, Importing modules, using built-in modules like Numpy."
+        ]
+      ],
+      "books": [
+        [
+          "Wesley J. Chun",
+          "Core Python Applications Programming, 3rd Edition, Pearson Education, 2016."
+        ],
+        [
+          "Charles Dierbach",
+          "Introduction to Computer Science using Python, Wiley, 2015."
+        ],
+        [
+          "Downey, A.",
+          "How to think like a Computer Scientist: Learning with Python, John Wiley, 2015."
+        ],
+        [
+          "Mark Lutz",
+          "Learning Python, 5th edition, Oreilly Publication, 2013."
+        ],
+        [
+          "John Zelle",
+          "Python Programming An Introduction to Computer Science, Second edition, Course Technology Cengage Learning Publications, 2013."
+        ],
+        [
+          "Michel Dawson",
+          "Python Programming for Absolute Beginners, Third Edition, Course Technology Cengage Learning Publications, 2013."
+        ],
+        [
+          "David Beazley, Brian Jones",
+          "Python Cookbook, Third Edition, O’Reilly Publication, 2013."
+        ]
+      ]
+    },
+    {
+      "semester": 1,
+      "code": "MDS-2603",
+      "name": "Advance Database Systems",
+      "category": "DSE",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "• Develop a deep understanding of advanced database systems, covering topics such as distributed databases, data warehousing, and No SQL databases.\n• Acquire hands-on experience in designing and implementing complex database systems, including optimization techniques and performance tuning.\n• Stay abreast of the latest trends in database technology, exploring topics like blockchain databases, graph databases, and in-memory databases.\n• Gain expertise in advanced database security measures and privacy considerations, ensuring the ability to design and implement secure and compliant data systems.",
+      "outcomes": "After completing this course the students will be able to:\n• Demonstrate proficiency in advanced database design, optimization, and implementation, showcasing their ability to architect robust and scalable data systems.\n• Apply their knowledge to implement and manage databases using emerging technologies, such as NoSQL, distributed databases, and in-memory databases.\n• Exhibit leadership in data security and compliance, implementing advanced measures to safeguard sensitive information in accordance with industry standards and regulations.\n• Possess strategic data management skills, ensuring their ability to handle large-scale datasets efficiently.",
+      "units": [
+        [
+          "UNIT I",
+          "Database Systems: DBMS: Components, Views of data-schemas and instances, Data independence, 3-tier Architecture, Data models classification: File based System, Traditional data models - Hierarchical, Network, Relational Models. Entity- relationship model, Representation of relationship set, Generalization, Aggregation, Normalization: 1NF, 2NF, 3NF, BCNF, 4NF and 5NF."
+        ],
+        [
+          "UNIT II",
+          "Relational Database Systems: Relational Database: Attributes, Domains, Tuples, Relations and their schemes. Relational Algebra: Operations- union, intersection, difference, Cartesian product, projection, selection, division and relational algebra queries; Relational Calculus: Tuple oriented and domain oriented relational calculus and its operations. Introduction to PL/SQL: block structure, Architecture, SQL within PL/SQL, Writing PL/SQL code, Cursors."
+        ],
+        [
+          "UNIT III",
+          "Transaction Management and Concurrency control: Concept of Transaction, ACID properties, Serializibility, States of transaction, Concurrency control: Locking techniques, Time stamp based protocols, Granularity of data items, Deadlock: Prevention and Detection techniques. Query Optimization: Query execution plans, Techniques for improving query performance."
+        ],
+        [
+          "UNIT IV",
+          "Temporal and Spatial Databases: Introduction to Temporal Database, Temporal data models. Introduction to Spatial Database: Definition, Types of spatial data, Geographical Information Systems (GIS). NoSQL Databases: Overview of NoSQL databases (document-oriented, key-value, column-family, graph), Use cases and suitability of NoSQL databases, Implementation and comparison of popular NoSQL databases (MongoDB, Cassandra, Redis)"
+        ]
+      ],
+      "books": [
+        [
+          "C.J.Date",
+          "Introduction to Database Systems."
+        ],
+        [
+          "Elmasri Navathe",
+          "Fundamentals of Database Systems."
+        ],
+        [
+          "Ivan Bayross",
+          "PL/SQL The Programming Language of ORACLE, BPB Publication."
+        ],
+        [
+          "Vijay Mukhi",
+          "Mastering Oracle 6.0, BPB Publications."
+        ],
+        [
+          "Abraham Silberschatz, Henry F. Korth, and S. Sudarshan",
+          "Database System Concepts."
+        ],
+        [
+          "Christian S. Jensen and Richard T. Snodgrass",
+          "Temporal Database Management: A Survey."
+        ],
+        [
+          "Shashi Shekhar and Sanjay Chawla",
+          "Spatial Databases: A Tour."
+        ]
+      ]
+    },
+    {
+      "semester": 1,
+      "code": "MDS-2604",
+      "name": "Operating System Concepts",
+      "category": "DSE",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "To understand the various concepts of Operating System like process management, synchronization, deadlocks, storage and memory management.",
+      "outcomes": "After successful completion of course the students will be able to:\n• Describe the important computer system resources and the role of operating system in their management policies and algorithms.\n• Understand the process management policies and scheduling of processes by CPU\n• Evaluate the requirement for process synchronization and coordination, memory management handled by operating system also cater-policies with respect to different storage.",
+      "units": [
+        [
+          "UNIT I",
+          "Introduction to Operating System: Introduction to Operating System, Its need and services; Different types of operating systems: batch, multi-programmed, time sharing, real time, distributed, parallel. Process Management and Synchronization: Process: Process state, Process control block, Inter process communication: Shared memory systems, Message passing systems; CPU Scheduling-scheduling criteria, Preemptive & non-pre-emptive scheduling, Scheduling Algorithms: FCFS, SJF, RR and Priority."
+        ],
+        [
+          "UNIT II",
+          "Synchronization: Critical section problem, Peterson’s solution, Synchronization hardware, Semaphores: Mutual exclusion, Producer-consumers, Reader-writers problem; Dining philosophers Problem; Deadlocks: System model, Deadlock characterization: Necessary conditions, Resource allocation graph, Method for handling deadlock; Deadlock prevention: Mutual exclusion, Hold and wait, No preemption, Circular wait, Deadlock avoidance: Safe state, Resource allocation graph algorithm, Banker’s algorithm; Deadlock detection, Recovery from deadlock."
+        ],
+        [
+          "UNIT III",
+          "Memory Management-I: Static and dynamic memory allocation, Memory allocation to process: Stacks, Heap, Memory allocation model; Reuse of memory: Performing fresh allocations using a free list, Memory fragmentation, Merging free areas; Contiguous memory allocation: Fragmentation, Swapping; Memory Management-II: Paging: Hardware support, Protection, shared pages, Techniques for structuring of page table, Memory mapped files; Segmentation, Demand paging, Page replacement Algorithms: FIFO, Optimal, LRU, Counting based page replacement; Thrashing."
+        ],
+        [
+          "UNIT IV",
+          "Storage Management I: File Concept: Attributes, Operations, Types, Structure; Access methods: Sequential and direct access, Index ; Directory structure: Single level, Two Level, Tree Structured, acyclic Graph directories; File System mounting, File sharing, Protection: Types of access, access Control. Storage Management II: File system structure, File system implementation, Directory implementation, Allocation methods, Free space management, Disk scheduling: FCFS, SSTF, SCAN, C-SCAN, LOOK, C-LOOK; Disk management, Swap space management, RAID."
+        ]
+      ],
+      "books": [
+        [
+          "Peterson, James, L. and Silberschatz, A.",
+          "Operating System Concepts, Wiley Publ. Comp, 1985."
+        ],
+        [
+          "Dhamdhere,D M",
+          "Operating Systems-A concept based approach, Mc Graw Hill."
+        ],
+        [
+          "Deitel, H.M.",
+          "An Introduction to Operating System, Addison-Wesley Publ.Comp, 1984."
+        ],
+        [
+          "Milenkovic, M.",
+          "Operating System – Concepts and Design, McGraw Hill, International Editions, 1987."
+        ],
+        [
+          "Richie",
+          "Operating System, BPB."
+        ],
+        [
+          "Hansen Per Brineh",
+          "Operating System Principles, Prentice Hall India, 1978."
+        ],
+        [
+          "Madnick and Donovan",
+          "Operating System, McGraw Hill Book Co."
+        ],
+        [
+          "Joshi, R.C.",
+          "Operating Systems, Wiley India Pvt. Ltd."
+        ]
+      ]
+    },
+    {
+      "semester": 2,
+      "code": "MDS-2606",
+      "name": "Advance Data Structures",
+      "category": "DSC",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "To provide a strong foundation in advanced data structures and algorithmic techniques essential for solving complex computational and data science problems",
+      "outcomes": "Upon successful completion of this course, students will be able to:\n• Analyze and evaluate the performance of advanced data structures and algorithms using mathematical, asymptotic, and recurrence-based techniques.\n• Design and implement balanced trees, multi-way trees and graph algorithms to solve complex computational problems efficiently.\n• Apply greedy, dynamic programming techniques to develop optimized solutions for real-world data science and engineering applications.\n• Classify problems based on computational complexity and justify algorithmic choices using concepts of NP-hardness, NP-completeness, and reduction-based reasoning.",
+      "units": [
+        [
+          "UNIT I",
+          "Introduction to advanced data structures: Introduction to advance data structures and their role in computing, Basics of algorithm analysis: performance measures, time & space complexity, Asymptotic Notations: Big-O, Big-Ω, Big-Θ; Recurrence solving techniques: Substitution Method and Master’s Method; Abstract Data Types (ADT): concept, design, and implementation; Overview of Linear and non-linear data structures; Introduction to linear DS: stacks, queues, linked lists; Non-linear DS basics: trees, graphs."
+        ],
+        [
+          "UNIT II",
+          "Balanced Trees and Multi-way Trees: Binary Search Trees (BST): operations, complexity; Balanced Trees: AVL Trees and Red-Black Trees; Multi-way Trees: B-Trees. Divide & Conquer Algorithms: Divide and Conquer technique: formulation and analysis; Classic algorithms: Merge Sort, Quick Sort."
+        ],
+        [
+          "UNIT III",
+          "Greedy Strategy and Graph-Based Greedy Methods: Greedy algorithm paradigm: properties and correctness, fractional Knapsack problem (fractional/greedy version), Job sequencing with deadlines, Minimum Cost Spanning Trees: Kruskal’s Algorithm. Classical Greedy Optimization Problems: Optimal merge pattern, Set cover / subset cover problem;"
+        ],
+        [
+          "UNIT IV",
+          "Dynamic Programming & Complexity Theory: Introduction to dynamic programming, Key DP problems: Matrix Chain Multiplication, 0/1 Knapsack, Longest Common Subsequence (LCS), Overview of Travelling Salesman Problem; Complexity Theory: Introduction to NP, NP-Hard, and NP-Complete classes, Concept of polynomial-time reductions. Graphs: Graph algorithms: DFS, BFS, Topological Sorting, Shortest Paths: Dijkstra, Bellman–Ford, Introduction to Network Flow problems;"
+        ]
+      ],
+      "books": [
+        [
+          "Horowitz, Ellis and Sahni, Sartaj",
+          "Fundamentals of Computer Algorithms, Universities Press Publications."
+        ],
+        [
+          "Aho, A.V., Hopcroft, J.E. and Ullman, J.D.",
+          "The Design and Analysis of Computer Algorithms, Addison-Wesley."
+        ],
+        [
+          "Mark Allen Weiss",
+          "Data Structures and Algorithm Analysis in C++, Pearson Education."
+        ],
+        [
+          "Brassard, Gilles and Bratley, Paul",
+          "Fundamentals of Algorithms, Prentice Hall of India."
+        ],
+        [
+          "Goodrich, Michael T., Tamassia, Roberto and Mount, David",
+          "Data Structures and Algorithms in C++, Wiley."
+        ],
+        [
+          "Kleinberg, Jon and Tardos, Éva",
+          "Algorithm Design, Pearson/Addison Wesley."
+        ]
+      ]
+    },
+    {
+      "semester": 2,
+      "code": "MDS-2607",
+      "name": "Statistical Methods for Data Science",
+      "category": "DSC",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "To know the fundamental concepts Statistical Methods used in Data science and to explore its practical implementation in real-life applications.",
+      "outcomes": "After successful completion of course the students will be able to:\n• Conceptual understanding of R language and its understanding for statistical computing and graphics. Implementation of R fundamentals and data frames.\n• Knowledge of hypothesis testing and curve fitting.\n• Understanding of important industrial use concepts as regression, classification, dimension reduction and clustering.\n• Understanding of important statistical based machine learning concepts as support vector machines, decision trees and random forest techniques.",
+      "units": [
+        [
+          "UNIT I",
+          "R Language: Programming with R basic data types, vector arithmetic, matrices, factor levels, ordered factors, data frame, sub setting and sorting data frames, charts and graphs in R, linear models in R as linear regression and multiple regression. Functions in R: writing a function in R, function scoping, recursion, R Package. Handling of csv files and datasets using R."
+        ],
+        [
+          "UNIT II",
+          "Data Distribution and Hypothesis Testing: Probability and Continuous distribution, Distribution of sample data, hypothesis testing, T-test, binomial distribution, chi-square distribution, F-distribution, Poisson distribution, confidence intervals, parametric intervals Curve Fitting: Linear regression with one predictor, least square for polynomial models, local fitting, big data cloud, visualizing multivariate data"
+        ],
+        [
+          "UNIT III",
+          "Regression and Classification: Multiple linear regression, polynomial regression, logistic regression, support vector machines, k-nearest neighbor, Naïve bayes theorem, decision tree and random forest"
+        ],
+        [
+          "UNIT IV",
+          "Dimension Reduction and Clustering: Introduction to unsupervised learning, Principal component analysis, linear discriminant analysis, k-means and hierarchical clustering"
+        ]
+      ],
+      "books": [
+        [
+          "Walter A. Rosenkrantz",
+          "Introduction to probability and statistics for scientists and engineers, McGraw-Hill."
+        ],
+        [
+          "Gareth James, Daniela Witten, Trevor Hastie Robert Tibshirani",
+          "An Introduction to Statistical Learning with Applications in R, Springer."
+        ],
+        [
+          "K.G. Srinivas, G M Siddesh",
+          "Statistical Programming in R, Oxford Publications."
+        ],
+        [
+          "Stanley H. Chan",
+          "Introduction to Probability for Data Science, Michigan Publishing"
+        ],
+        [
+          "Hadley Wickham and Garrett Grolemund",
+          "R: Data Science, O-Reilly Publishers"
+        ],
+        [
+          "Carlos Andre Reis Pinheiro and Mike Patetta",
+          "Introduction to Statistical and Machine Learning Methods for Data Science, SAS Institute Publishers."
+        ],
+        [
+          "Christopher M Bishop",
+          "Pattern Recognition and Machine Learning, Springer."
+        ],
+        [
+          "S. Sridhar and M. Vijayalakshmi",
+          "Machine Learning, Oxford University Press."
+        ]
+      ]
+    },
+    {
+      "semester": 2,
+      "code": "MDS-2608",
+      "name": "Data Mining and Artificial Intelligence",
+      "category": "DSE",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "• Equip students with the theoretical foundations and practical skills in data mining and artificial intelligence\n• Fostering proficiency in implementing architectural algorithms\n• Exploring emerging trends and promoting ethical application across diverse domains.",
+      "outcomes": "After completing the course the student will be able to:\n• Have understanding of data warehousing fundamentals and data mining techniques like association, classification, and clustering.\n• Have knowledge of Artificial intelligence historical context, heuristic search methods, and knowledge representation encompassing logic and semantic networks.\n• Have possess knowledge of specialized AI areas, including expert systems, natural language processing, genetic algorithms, and artificial neural networks covering various learning paradigms.",
+      "units": [
+        [
+          "UNIT I",
+          "Data Warehousing: Data Warehousing: Definition, usage and trends, Characteristics of a Data Warehouse, DBMS vs. data warehouse. Data Mining :Steps of Data Mining Process, Data Modeling for data warehouses, OLAP and OLTP, Association rules, Classification, Clustering, Regression. Classification and Clustering: Dependency Modeling, Link Analysis, Sequencing Analysis, Social Network Analysis."
+        ],
+        [
+          "UNIT II",
+          "Introduction to Artificial Intelligence: Turing Test, History and Development in AI, applications of AI, State Space representation, Production Systems, characteristics and problem characteristics. Heuristic Search Techniques: Introduction to heuristic search, Hill Climbing, game playing, min-max search procedure, reducing alternatives using Alpha-Beta pruning cutoff method. Knowledge Representation: Knowledge representation methods, Logic: Propositional logic and first order predicate logic, Semantic networks, Frames, Rules, Scripts, Handling uncertainty in knowledge."
+        ],
+        [
+          "UNIT III",
+          "Expert Systems: Expert Systems: Characteristics and Architecture. Natural Language Processing: Grammar and Language, Parsing Techniques, Semantic Analysis and Pragmatics, Conceptual Dependency and Ontologies."
+        ],
+        [
+          "UNIT IV",
+          "Fuzzy sets: Notion of fuzziness, Membership functions, fuzzification and defuzzification, Operations on fuzzy sets, fuzzy functions and linguistic variables. Genetic Algorithms(GA): Encoding strategies, Genetic operators, Fitness functions and GA cycle , Problem solving using GA. Artificial Neural Networks (ANN): Supervised, unsupervised and reinforcement Learning, Single Perceptron, Multi Layer Perceptron, Self Organizing Maps, Hopfield Network."
+        ]
+      ],
+      "books": [
+        [
+          "Jiawei Han, Micheline Kamber, Jian Pei, Hanghang Tong",
+          "Data Mining: Concepts and Techniques, Third Edition, Elsevier."
+        ],
+        [
+          "Rich Elaine and Knight Kevin Shiva Shankar B. Nair",
+          "Artificial Intelligence, Third Edition, Tata MacGraw Hill, 2017."
+        ],
+        [
+          "Patterson, Dan W.",
+          "Introduction to Artificial Intelligence and Expert Systems, Pearson Education, 2015."
+        ],
+        [
+          "S.N. Sivanandam and S.N. Deepa",
+          "Principles of Soft Computing, Second Edition, John Wiley."
+        ],
+        [
+          "Daniel Jurafsky and James H. Martin",
+          "Speech and Language Processing: Second Edition, Pearson."
+        ]
+      ]
+    },
+    {
+      "semester": 2,
+      "code": "MDS-2609",
+      "name": "Big Data Analytics",
+      "category": "DSE",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "• To provide an overview of an exciting growing field of big data analytics.\n• To introduce the tools required to manage and analyze big data like Hadoop, MapReduce.\n• To teach the fundamental techniques and principles in achieving big data analytics with scalability and streaming capability.\n• To enable students to have skills that will help them to solve complex real-world problems in for decision support.",
+      "outcomes": "After the completion of the course the students will be able to\n• Understand the key issues in big data management and its associated applications in intelligent business and scientific computing.\n• Acquire fundamental enabling techniques and scalable algorithms like Hadoop, and Map Reduce in big data analytics.\n• Interpret business models and scientific computing paradigms, and apply software tools for big data analytics.\n• Achieve adequate perspectives of big data analytics in various applications like recommender systems, social media applications etc.",
+      "units": [
+        [
+          "UNIT I",
+          "Introduction to Big Data - Definition, need and importance, Characteristics of Big Data and Dimensions of Scalability, Foundations for Big Data Systems and Programming, Application of Big Data Analytics."
+        ],
+        [
+          "UNIT II",
+          "Hadoop: History of Hadoop, The Hadoop Distributed File System, Components of Hadoop, Analyzing the Data with Hadoop, Design of HDFS, HDFS concepts, Hadoop I/O, data integrity, compression, and serialization, Setting up Hadoop Eco System."
+        ],
+        [
+          "UNIT III",
+          "MapReduce: Introduction, Using Elastic MapReduce, Understanding MapReduce key-value pairs, The Hadoop Java API for MapReduce, Writing MapReduce programs, Hadoop specific data types, Input and output."
+        ],
+        [
+          "UNIT IV",
+          "HIVE and PIG - Introduction of Hive, Hive Features, Hive architecture, Hive Vs. RDBMS, Hive Meta store, Hive data types, Hive Tables, Table types, Creating database, DDL and DML, Built-In Functions and Operators, User defined functions. PIG - Overview of Pig, Pig Architecture, Pig Execution modes, Pig Grunt shell and Shell - commands. Pig Execution Modes – Batch Mode, Embedded Mode, Pig Execution in Batch Mode. Embedding Pig in Python – Use cases, Map Reduce programs with Pig, Pig Vs SQL."
+        ]
+      ],
+      "books": [
+        [
+          "Chris Eaton, Dirk Deroos et al.",
+          "Understanding Big data, McGraw Hill, 2012."
+        ],
+        [
+          "Tom White",
+          "Hadoop: The Definitive Guide, Fourth Edition, O′Reilly Publishers, 2012."
+        ],
+        [
+          "Donald Miner, Adam Shook",
+          "MapReduce Design Patterns, O'Reilly Media November 22, 2012."
+        ],
+        [
+          "Edward Capriolo, DeanWampler, Jason Rutherglen",
+          "Programming Hive, O'Reilly Media; 1 edition, October, 2012."
+        ],
+        [
+          "Deepak Vohra",
+          "Practical Hadoop Ecosystem - A Definitive Guide to Hadoop-Related Frameworks First Edition, Apress Publisher, ISBN: 9781484221983, 2016"
+        ],
+        [
+          "Alan Gates",
+          "Programming Pig, O'Reilly Media; 1st Edition, October, 2011."
+        ]
+      ]
+    },
+    {
+      "semester": 3,
+      "code": "MDS-2611",
+      "name": "Data Visualization",
+      "category": "DSC",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "• To Know the fundamental principles and types of data visualization.\n• To Use data visualization tools in Python Matplotlib library.\n• To Create informative visualization and summarize data sets in Tableau.",
+      "outcomes": "After the completion of the course the students will\n• Have understanding of data visualization techniques to develop charts, maps, plots, and other visual representations of data.\n• Be able to implement the data visualization techniques using Python libraries and Tableau.\n• Have knowledge of application of different visualization approaches on real-world datasets.",
+      "units": [
+        [
+          "UNIT I",
+          "Data Visualization: Definition, Importance, Mapping data onto Aesthetics, Principles, Techniques, Introduction to Basic and Specialized Visualization Tools."
+        ],
+        [
+          "UNIT II",
+          "Visualization with Matplotlib-I: Basics of Python Matplotlib, Creating Histograms, Bar Charts, Pie Charts, Box Plots, Heat Map, Scatter Plots etc. with Matplotlib, Customizing Plots-visual style and layout."
+        ],
+        [
+          "UNIT III",
+          "Visualization with Matplotlib-II: Plotting Time Series data, Three-Dimensional Plotting and Geographic Data with Base map. Incorporating Animations and Interactivity for Plots, Saving Plots to File, Case studies involving real-world data sets."
+        ],
+        [
+          "UNIT IV",
+          "Visualization with Tableau: Introduction, Interface and Features, Adding Data Sources in Tableau, Creating Data Visualizations – Aggregate Functions, Calculated Fields, and Parameters, Advanced Analytics: Trends, Forecasts, Clusters, and other Statistical Tools; Case studies involving real-world data sets."
+        ]
+      ],
+      "books": [
+        [
+          "Claus O. Wilke",
+          "Fundamentals of Data Visualization: A Primer on Making Informative and Compelling Figures, O′Reilly Publication."
+        ],
+        [
+          "Matthew O. Ward, Georges Grinstein, Daniel Keim",
+          "Interactive Data Visualization: Foundations, Techniques, and Applications, CRC Press."
+        ],
+        [
+          "Kieran Healy",
+          "Data Visualization: A Practical Introduction, Princeton University Press."
+        ],
+        [
+          "Dr.Abhinav",
+          "Data Visualization using Python Programming- A Technical Guide for Beginners, Researchers and Data Analyst, Shaswat Publication."
+        ],
+        [
+          "Kalilur Rahman",
+          "Python Data Visualization Essentials Guide, BPB Publication."
+        ],
+        [
+          "Kavitha Ranganathan",
+          "Impactful Data Visualization: Hide and Seek with Graphs, Sage Publication."
+        ]
+      ]
+    },
+    {
+      "semester": 3,
+      "code": "MDS-2612",
+      "name": "Machine Learning- Tools and Techniques",
+      "category": "DSC",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "To empower students with a foundational understanding of machine learning concepts spanning supervised, unsupervised, and deep learning techniques, fostering the ability to implement and evaluate various algorithms for solving diverse data analysis problems in the context of data science.",
+      "outcomes": "After completion of the course the student will be able to:\n• Comprehend core machine learning principles spanning supervised, unsupervised, and deep learning techniques.\n• Apply diverse machine learning algorithms for practical problem-solving in data science.\n• Utilize machine learning techniques for real-world data analysis, encompassing pre-processing, model selection, and neural network construction for classification and sequence tasks.",
+      "units": [
+        [
+          "UNIT I",
+          "Introduction to Machine Learning: Machine learning in Data Science, Overview and comparison of Supervised, Unsupervised, Semi-Supervised and Reinforcement Learning; Basic Concepts: data pre-processing, feature engineering, model evaluation, loss functions, and the importance of splitting data into training, validation, and testing sets; Introduction to Scikit-Learn: Overview, advantages, role in machine learning workflows; Data Representation: Data formats, loading data using Scikit-Learn structures."
+        ],
+        [
+          "UNIT II",
+          "Supervised Machine Learning Techniques: Linear Models: Linear regression; Logistic Regression for binary classification problems and its practical implementation; Support Vector Machines (SVM): SVM and its implementation; Decision Trees: Construction and architecture; Random Forest: Architecture, Random Forest vs Decision tree; K-Nearest Neighbors (K-NN): Application of K-NN for classification and regression; Implementing all techniques using Python libraries Scikit-Learn and PyTorch."
+        ],
+        [
+          "UNIT III",
+          "Unsupervised Machine Learning Techniques: K-Means Clustering: Principle and algorithm, its principles, and the process of partitioning data into clusters based on similarities. Implementing K-Means clustering with Scikit-Learn's KMeans() function, exploring parameters and methods for optimizing cluster results; Dimensionality Reduction: Principles of Principal Component Analysis (PCA) for reducing the dimensionality, Implementing PCA using Scikit-Learn's PCA() function to reduce the dimensions of datasets and visualizing the variance."
+        ],
+        [
+          "UNIT IV",
+          "Deep Learning: Principle, architecture, significance and applications of Deep Learning; CNN: architecture, convolutional layers, pooling, and fully connected layers; Implementing CNNs with PyTorch by using nn.Conv2d() , nn.MaxPool2d() and nn.Linear() modules to construct and train CNN models for image classification tasks; RNNs: Principles of RNNs for sequential data analysis, LSTM and GRU Cells, Implementing RNNs with PyTorch for sequence prediction tasks."
+        ]
+      ],
+      "books": [
+        [
+          "Keras, and TensorFlow",
+          "Hands-On Machine Learning with Scikit-Learn, Concepts, Tools, and Techniques to Build Intelligent Systems by AurélienGéron, Shroff/O'Reilly."
+        ],
+        [
+          "Tom M. Mitchell",
+          "Machine Learning Mc Graw Hill Education."
+        ],
+        [
+          "Jason Bell, Wiley",
+          "Machine Learning for Big Data."
+        ],
+        [
+          "Peter Harrington",
+          "Machine Learning in Action, dreamtech press."
+        ],
+        [
+          "Gareth James, Daniela Witten, et al.",
+          "An Introduction to Statistical Learning: with Applications in Python (Springer Texts in Statistics), Springer."
+        ],
+        [
+          "Andreas Muller",
+          "Introduction to Machine Learning with Python: A Guide for Data Scientists (Greyscale Indian Edition), O’Reilly."
+        ],
+        [
+          "Christopher M. Bishop",
+          "Pattern Recognition and Machine Learning (Information Science and Statistics), Springer."
+        ],
+        [
+          "Ankur A. Patel",
+          "Hands-On Unsupervised Learning Using Python: How to Build Applied Machine Learning Solutions for Unlabeled, O’Reilly."
+        ],
+        [
+          "Ian Goodfellow, YoshuaBengio, Aaron Courville",
+          "Deep Learning (Adaptive Computation and Machine Learning series) Illustrated Edition, the MIT Press."
+        ],
+        [
+          "Ivan Vasilev et al",
+          "Python Deep Learning: Exploring deep learning techniques and neural network architectures with PyTorch, Keras, and TensorFlow, Packt Publishing Limited."
+        ]
+      ]
+    },
+    {
+      "semester": 3,
+      "code": "MDS-2613",
+      "name": "Software Project Management",
+      "category": "DSE",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "This syllabus encompasses key software engineering principles, software design strategies, agile project management for data science, risk assessment, effective team collaboration, and ethical considerations. It prepares students to apply contemporary methods and emerging trends in data science project management for efficient and ethical delivery of outcomes in a rapidly evolving technological landscape.",
+      "outcomes": "After successful completion of the course, students will be able to:\n• Apply project management principles to the unique context of data science projects.\n• Demonstrate proficiency in Agile methodologies and their application in data science environments.\n• Effectively manage risks associated with data science projects.\n• Understand the importance of data governance and ethics in project management for data science.",
+      "units": [
+        [
+          "UNIT I",
+          "Software Engineering Basic: Software Crisis, Software Process Models: Waterfall, Prototyping, Spiral; Software Metrics. Software design Process: Structured design, Object oriented design. Emerging Trends in Data Science Project Management: AI-Powered Project Management, Automated Machine Learning (AutoML) for Project Tasks, Block chain for Data Integrity."
+        ],
+        [
+          "UNIT II",
+          "Agile Project Management for Data Science: Introduction to Agile Methodologies: Agile principles and values, Scrum and Kanban methodologies in data science. Agile Project Execution and Monitoring: Sprint planning, daily stand-ups, and retrospectives. Managing tasks, resources and progress in Agile."
+        ],
+        [
+          "UNIT III",
+          "Risk Management and Collaboration in Data Science Projects: Risk impacts and risk Management in Data Science: Identifying, assessing, and mitigating risks, Team Collaboration and Communication: Collaboration tools for distributed data science teams."
+        ],
+        [
+          "UNIT IV",
+          "Data Governance, Ethics, and Project Delivery: Data Governance and Ethics in project management for data science projects. Delivering project outcomes in data science: Conducting project closure activities."
+        ]
+      ],
+      "books": [
+        [
+          "Felipe Mejia",
+          "Data Science Project Management, 2021, A press."
+        ],
+        [
+          "Roger S. Pressman",
+          "Software Engineering: A Practitioner's Approach, 8th Edition, McGraw-Hill Education, 2020."
+        ],
+        [
+          "Mike Cohn",
+          "Agile Estimating and Planning, Prentice Hall, 2005."
+        ],
+        [
+          "Michael M. Bissonette",
+          "Project Risk Management: A Practical Implementation Approach, Wiley, 2003."
+        ],
+        [
+          "John Ladley",
+          "Data Governance: How to Design, Deploy and Sustain an Effective Data Governance Program, Morgan Kaufmann 2012."
+        ]
+      ]
+    },
+    {
+      "semester": 3,
+      "code": "MDS-2614",
+      "name": "Research Methods and Ethics in Data Science",
+      "category": "DSE",
+      "lectures": "4",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "objectives": "• Understand key research methodologies in Data Science and their societal impact.\n• Develop skills to critically review literature and formulate research problems in Data Science.\n• Learn to design research studies and ensure validity, reliability, and effective data collection.\n• Examine ethical challenges in data science, focusing on fairness, privacy, and responsible research practices.",
+      "outcomes": "• Design and conduct research studies in Data Science using appropriate methodologies and tools.\n• Formulate research questions and problems specific to Data Science applications.\n• Evaluate ethical implications of data usage and propose responsible strategies.\n• Communicate Data Science research effectively while adhering to ethical standards.",
+      "units": [
+        [
+          "UNIT I",
+          "Introduction to Research Methodologies in Data Science: Objectives of Research in Data Science and its Societal Impact; Types of Research: Exploratory, Descriptive, Experimental, and Interdisciplinary; Steps in Research; Characteristics of Good Research; Developing Research Questions and Hypotheses in Data Science; Case Study focusing on framing and solving research problems in real-world Data Science scenarios."
+        ],
+        [
+          "UNIT II",
+          "Formulating Research Problems and Reviewing Literature: Critical Analysis of Literature in Data Science; Identifying Gaps in Existing Research: Datasets, methodologies, and outcomes; Formulating Research Problems in Applied, Qualitative, and Quantitative Research; Setting Research Goals and Objectives: Feasibility, innovation, and impact; Case Study focusing on literature review and problem formulation in emerging areas such as NLP or ethical AI."
+        ],
+        [
+          "UNIT III",
+          "Research Design and Data Collection in Data Science: Research Design: Features, common frameworks, and challenges; Data Collection Techniques: Surveys, experiments, and secondary data sources; Ensuring Validity, Reliability, and Verification of Research Outputs; Case Study: Designing and implementing research projects in Data Science domains such as predictive modeling or anomaly detection."
+        ],
+        [
+          "UNIT IV",
+          "Ethical Foundations in Data Science: Principles of Data Ethics: Fairness, Accountability, and Transparency (FAT); Data Privacy and Security Regulations: GDPR, HIPAA, and beyond; Ethical Challenges in Algorithm Design and Data Use: Bias, discrimination, and informed consent; Writing and Publishing Data Science Research: Ethical considerations and best practices; Case Studies focusing on Interdisciplinary ethical challenges and solutions in applied Data Science."
+        ]
+      ],
+      "books": [
+        [
+          "Wayne C. Booth, Gregory G. Colomb, Joseph M. Williams, Joseph Bizup and William T. FitzGerald",
+          "The Craft of Research, Fourth Edition, The University of Chicago press, 2016."
+        ],
+        [
+          "John W. Creswell",
+          "Research Design Qualitative, Quantitative, and Mixed Methods Approaches, Fourth Edition, Sage Publishers, 2019."
+        ],
+        [
+          "C. R. Kothari",
+          "Research Methodology – Methods and techniques, New Age International Publishers 2009."
+        ],
+        [
+          "Cathy O'Neil",
+          "Weapons of Math Destruction: How Big Data Increases Inequality and Threatens Democracy, Crown Publishing Group (an imprint of Penguin Random House), 2016."
+        ],
+        [
+          "DJ Patil, Hilary Mason, and Mike Loukides",
+          "Ethics and Data Science, O'Reilly Media, 2018."
+        ]
+      ]
+    }
+  ],
+  "projectSubjects": [
+    {
+      "semester": 1,
+      "code": "MDS-2605",
+      "name": "Minor Project based on MDS-2602",
+      "category": "DSC",
+      "lectures": "8",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "practical": "The Practical examination will be conducted for Paper Code: MDS - 2605 (Minor Project Based on MDS - 2602). Time: 3 Hrs. Max. Marks: 100. External: 80. Internal: 20. The Internal Assessment Marks for each practical will be based on Minor Project. Paper will be set at the time of examination. Due weight-age may be given to the practical notebook and assignments for evaluation."
+    },
+    {
+      "semester": 2,
+      "code": "MDS-2610",
+      "name": "Minor Project based on MDS-2606 and MDS-2607 using Python Programming",
+      "category": "DSC",
+      "lectures": "8",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "practical": "The Practical examination will be conducted for Paper Code: MDS-2610 (Minor Project based on MDS-2606 and MDS-2607). Time: 3 Hrs. Max. Marks: 100. External: 80. Internal: 20. The Internal Assessment Marks for each practical will be based on Minor Project. Paper will be set at the time of examination. Due weight-age may be given to the practical notebook and assignments for evaluation. Each student is required to undergo 04 to 06 weeks Summer Training at the end of Second Semester."
+    },
+    {
+      "semester": 3,
+      "code": "MDS-2615",
+      "name": "Minor Project based on MDS-2611 and MDS-2612",
+      "category": "DSC",
+      "lectures": "8",
+      "exam": 80,
+      "internal": 20,
+      "total": 100,
+      "credits": 4,
+      "practical": "The Practical examination will be conducted for Paper Code: MDS-2615 (Minor Project based on MDS-2611 and MDS-2612). Time: 3 Hrs. Max. Marks: 100. External: 80. Internal: 20. The Internal Assessment Marks for each practical will be based on Minor Project. Paper will be set at the time of examination. Due weight-age may be given to the practical notebook and assignments for evaluation."
+    }
+  ],
+  "semesters": [
+    {
+      "number": 1,
+      "name": "Semester 1",
+      "description": "First year: Principles of Data Science, Python, Advanced Database Systems, Operating System Concepts and Minor Project."
+    },
+    {
+      "number": 2,
+      "name": "Semester 2",
+      "description": "First year: Advanced Data Structures, Statistical Methods for Data Science, Data Mining and Artificial Intelligence, Big Data Analytics and Minor Project."
+    },
+    {
+      "number": 3,
+      "name": "Semester 3",
+      "description": "Second year: Data Visualization, Machine Learning, Software Project Management, Research Methods and Ethics in Data Science and Minor Project."
+    },
+    {
+      "number": 4,
+      "name": "Semester 4",
+      "description": "Second year: Major Project and Seminar."
+    }
+  ],
+  "majorProjectRequirements": "The report should consist of the following:\n• Cover page including Project title, Name of the student, Name of the Department and Names of the Project Guides (both External and Internal).\n• Acknowledgements.\n• Certificates from company and department duly signed by external guide, Principal and internal guide.\n• Contents with page numbers.\n• Introduction (includes background and application or importance of the project)\n• Objectives\n• System Analysis\n• System Feasibility study\n• Software requirement specifications\n• Design with system flowcharts and input/output design.\n• Implementation and Testing\n- Hardware and software used\n- Listing of well commented programs with result/output or detailed algorithms with input and output.\n• Further scope of the project\n• Bibliography\n• Appendices (any other information related to project)\n\nEach student should observe the following norms while submitting the synopsis/thesis for the Project:\n(a) Use both sides of the paper instead of only single side.\n(b) Use one and half interline spacing in the text (instead of double space)\n(c) Stop using a blank sheet before the page, carrying figure or table.\n(d) Try to insert figure/table in the text page itself (instead of using a fresh page for it, each time.)\n\nStudents must consult/inform the internal guides regarding the progress of their work at least once in 20 days. It is the duty of the student to be in touch with his/her internal guide. The student must prepare 3 copies of the report including one copy for self. The remaining two copies are to be submitted before 31st May every year as per the following:\n1. Department Library\n2. Internal Guide\nOne softcopy of the work is to be submitted to the concerned head of the department/institution along with the report. The student must present his/ her work in 10 - 15 minutes mainly focusing on his/her contribution with the help of slides followed by demonstration of the practical work done. The project Viva will be completed before 15th June every year exact dates will be informed before 31st May every year. An external examiner, internal examiner and the internal guide will conduct project viva.",
+  "examInstructions": "The Question paper will consist of four units. Examiner will set total of nine questions comprising two questions from each unit and one compulsory question of short answer type covering whole syllabi and having equal distribution of marks from all the units. The students are required to attempt one question from each unit and the compulsory question. All questions carry equal marks.",
+  "semester4Components": [
+    {
+      "semester": 4,
+      "code": "MDS-2616",
+      "name": "Major Project",
+      "category": "DSC",
+      "lectures": "-",
+      "exam": 240,
+      "internal": 60,
+      "total": 300,
+      "credits": 12
+    },
+    {
+      "semester": 4,
+      "code": "MDS-2617",
+      "name": "Seminar (Based on MDS-2616)",
+      "category": "DSE",
+      "lectures": "-",
+      "exam": 160,
+      "internal": 40,
+      "total": 200,
+      "credits": 8
+    }
+  ]
+}
